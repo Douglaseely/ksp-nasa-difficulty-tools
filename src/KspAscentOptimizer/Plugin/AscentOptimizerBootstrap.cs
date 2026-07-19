@@ -16,11 +16,16 @@ public sealed class AscentOptimizerBootstrap
         _far = far;
     }
 
-    public void ConfigureAndEngage(VehicleProfile vehicle)
+    public void ConfigureAndEngage(VehicleProfile vehicle, GuidanceRequest? guidanceRequest = null)
     {
         _ = vehicle;
         _ = _realFuels.GetCurrentStageMinimumThrottle01();
         _ = _far.EstimateDragLossesMetersPerSecond();
+
+        if (guidanceRequest?.Mode == GuidanceMode.SurfaceHop)
+        {
+            _ = _mechJeb.SupportsSurfaceHopGuidance();
+        }
 
         // Placeholder policy until your math optimizer is implemented.
         _mechJeb.SetAscentMaxAcceleration(30.0);
