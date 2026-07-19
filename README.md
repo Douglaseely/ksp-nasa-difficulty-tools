@@ -38,6 +38,13 @@ The architecture is designed so you write the math yourself:
 2. `dotnet restore`
 3. `dotnet build`
 
+## Test lanes
+
+- `dotnet test tests/KspIntegrationTests/KspIntegrationTests.csproj`
+	- Validates the KSP/mod integration seam, reflection adapters, and bootstrap wiring.
+- `dotnet test tests/KspMathCoreKhanTests/KspMathCoreKhanTests.csproj`
+	- Fixed-answer Khan-style checks for your worksheet math. These are expected to fail until you implement the worksheet methods.
+
 ## Next implementation steps
 
 1. Implement equations in `KspMathCore` worksheet files.

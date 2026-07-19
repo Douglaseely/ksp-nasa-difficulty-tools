@@ -1,4 +1,4 @@
-using KspMissionPlanner.Integrations;
+using KspIntegration.Mission;
 using KspMissionPlanner.Planning;
 
 namespace KspMissionPlanner.Plugin;

@@ -1,4 +1,4 @@
-using KspAscentOptimizer.Integrations;
+using KspIntegration.Flight;
 using KspAscentOptimizer.Optimization;
 
 namespace KspAscentOptimizer.Plugin;

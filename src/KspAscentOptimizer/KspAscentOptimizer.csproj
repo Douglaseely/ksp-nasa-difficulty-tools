@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\KspIntegration\KspIntegration.csproj" />
     <ProjectReference Include="..\KspMathCore\KspMathCore.csproj" />
   </ItemGroup>
 
