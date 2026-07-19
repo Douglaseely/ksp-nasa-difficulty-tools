@@ -45,6 +45,15 @@ The architecture is designed so you write the math yourself:
 - `dotnet test tests/KspMathCoreKhanTests/KspMathCoreKhanTests.csproj`
 	- Fixed-answer Khan-style checks for your worksheet math. These are expected to fail until you implement the worksheet methods.
 
+## Mission persistence
+
+- Mission programs can be stored via `FileMissionProgramStore` as one JSON file per mission.
+- Recommended KSP runtime location: `GameData/YourMod/Missions/<save-name>/`.
+
+## UI planning
+
+- See `docs/KSP_UI_USAGE_AND_IMPLEMENTATION.md` for in-game workflow, tab layout, lifecycle hooks, and implementation milestones.
+
 ## Next implementation steps
 
 1. Implement equations in `KspMathCore` worksheet files.

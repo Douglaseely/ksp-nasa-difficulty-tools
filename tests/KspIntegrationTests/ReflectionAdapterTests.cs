@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using KspAscentOptimizer.Optimization;
 using KspAscentOptimizer.Plugin;
 using KspIntegration.Flight;
@@ -347,6 +348,83 @@ public sealed class ReflectionAdapterTests
         Assert.Equal(MissionGoalType.ParkingOrbit, augmented.Stages[0].Goals[0].GoalType);
         Assert.Equal(MissionGoalType.Landing, augmented.Stages[0].Goals[1].GoalType);
         Assert.Equal(MissionGoalType.ParkingOrbit, augmented.Stages[0].Goals[2].GoalType);
+    }
+
+    [Fact]
+    public void FileMissionProgramStore_SavesAndLoadsMissionProgram()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ksp-mission-store-" + System.Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var store = new FileMissionProgramStore(tempDir);
+            var mission = new MissionProgram
+            {
+                MissionId = "mun-tour-001",
+                Name = "Mun Landing and Return",
+                Stages = new[]
+                {
+                    new MissionStage
+                    {
+                        StageNumber = 1,
+                        Name = "Transfer",
+                        Goals = new[]
+                        {
+                            new MissionGoal { GoalId = "g1", Name = "Kerbin Parking", GoalType = MissionGoalType.Orbit, TargetBody = "Kerbin" },
+                            new MissionGoal { GoalId = "g2", Name = "Mun Landing", GoalType = MissionGoalType.Landing, TargetBody = "Mun" },
+                        },
+                    },
+                },
+            };
+
+            store.Save(mission);
+            var found = store.TryGetById("mun-tour-001", out var loaded);
+
+            Assert.True(found);
+            Assert.Equal("Mun Landing and Return", loaded.Name);
+            Assert.Single(loaded.Stages);
+            Assert.Equal(2, loaded.Stages[0].Goals.Count);
+            Assert.True(File.Exists(Path.Combine(tempDir, "mission-mun-tour-001.json")));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void FileMissionProgramStore_ListsAndDeletesPrograms()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "ksp-mission-store-" + System.Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var store = new FileMissionProgramStore(tempDir);
+            store.Save(new MissionProgram { MissionId = "m1", Name = "Mission 1" });
+            store.Save(new MissionProgram { MissionId = "m2", Name = "Mission 2" });
+
+            var beforeDelete = store.GetAll();
+            Assert.Equal(2, beforeDelete.Count);
+
+            var deleted = store.Delete("m1");
+            Assert.True(deleted);
+
+            var afterDelete = store.GetAll();
+            Assert.Single(afterDelete);
+            Assert.Equal("m2", afterDelete[0].MissionId);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
     }
 
     private sealed class FakeGameContext
