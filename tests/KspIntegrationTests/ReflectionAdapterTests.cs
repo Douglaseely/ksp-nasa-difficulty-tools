@@ -243,6 +243,112 @@ public sealed class ReflectionAdapterTests
         Assert.True(snapshot.AscentAutopilotEnabled);
     }
 
+    [Fact]
+    public void MissionPlannerBootstrap_PersistsMultipleMissionPrograms()
+    {
+        var context = new ReflectionKspGameContext(new FakeGameContext { UniversalTimeSeconds = 100, CurrentSaveName = "Career" });
+        var store = new InMemoryMissionProgramStore();
+        var bootstrap = new MissionPlannerBootstrap(context, missionStore: store);
+
+        var missionA = new MissionProgram { MissionId = "mission-a", Name = "Mun Landing" };
+        var missionB = new MissionProgram { MissionId = "mission-b", Name = "Minmus Orbiter" };
+
+        bootstrap.SaveMissionProgram(missionA);
+        bootstrap.SaveMissionProgram(missionB);
+
+        var allMissions = bootstrap.GetMissionPrograms();
+        Assert.Equal(2, allMissions.Count);
+        Assert.Contains(allMissions, mission => mission.MissionId == "mission-a");
+        Assert.Contains(allMissions, mission => mission.MissionId == "mission-b");
+
+        var deleted = bootstrap.DeleteMissionProgram("mission-a");
+        Assert.True(deleted);
+        Assert.Single(bootstrap.GetMissionPrograms());
+    }
+
+    [Fact]
+    public void MissionPlannerBootstrap_IncludesGravityAssistCandidatesInTransitionAssessments()
+    {
+        var context = new ReflectionKspGameContext(new FakeGameContext { UniversalTimeSeconds = 43210, CurrentSaveName = "Career" });
+        var gravityScout = new FixedGravityAssistScout();
+        var bootstrap = new MissionPlannerBootstrap(context, gravityAssistScout: gravityScout);
+
+        var missionProgram = new MissionProgram
+        {
+            MissionId = "interplanetary-1",
+            Name = "Duna Relay",
+            Stages = new[]
+            {
+                new MissionStage
+                {
+                    StageNumber = 1,
+                    Name = "Transfer",
+                    Goals = new[]
+                    {
+                        new MissionGoal { GoalId = "goal-kerbin-orbit", Name = "Kerbin Parking Orbit", GoalType = MissionGoalType.Orbit, TargetBody = "Kerbin" },
+                        new MissionGoal { GoalId = "goal-duna-orbit", Name = "Duna Capture Orbit", GoalType = MissionGoalType.Orbit, TargetBody = "Duna" },
+                    },
+                },
+            },
+        };
+
+        var plan = bootstrap.BuildReversePlan(missionProgram);
+
+        Assert.Single(plan.TransitionAssessments);
+        Assert.Single(plan.TransitionAssessments[0].GravityAssistCandidates);
+        Assert.Equal("Eve", plan.TransitionAssessments[0].GravityAssistCandidates[0].AssistBodyName);
+        Assert.Single(plan.Legs);
+        Assert.Single(plan.Legs[0].GravityAssistCandidates);
+    }
+
+    [Fact]
+    public void MissionPlannerBootstrap_EnsuresParkingOrbitGoalsAroundLandingGoal()
+    {
+        var context = new ReflectionKspGameContext(new FakeGameContext { UniversalTimeSeconds = 1, CurrentSaveName = "Career" });
+        var bootstrap = new MissionPlannerBootstrap(context);
+        var missionProgram = new MissionProgram
+        {
+            MissionId = "mun-surface-mission",
+            Name = "Mun Site Landing",
+            Stages = new[]
+            {
+                new MissionStage
+                {
+                    StageNumber = 1,
+                    Name = "Surface Mission",
+                    Goals = new[]
+                    {
+                        new MissionGoal
+                        {
+                            GoalId = "landing-goal",
+                            Name = "Land at Site Alpha",
+                            GoalType = MissionGoalType.Landing,
+                            TargetBody = "Mun",
+                            SurfaceTarget = new SurfaceTarget { BodyName = "Mun", LatitudeDegrees = 12, LongitudeDegrees = 45 },
+                        },
+                    },
+                },
+            },
+        };
+
+        var augmented = bootstrap.EnsureParkingOrbitGoals(
+            missionProgram,
+            new ParkingOrbitTemplate
+            {
+                DefaultPeriapsisAltitudeMeters = 15000,
+                DefaultApoapsisAltitudeMeters = 18000,
+                DefaultInclinationRadians = 0.0,
+            },
+            addBeforeLanding: true,
+            addAfterLanding: true);
+
+        Assert.Single(augmented.Stages);
+        Assert.Equal(3, augmented.Stages[0].Goals.Count);
+        Assert.Equal(MissionGoalType.ParkingOrbit, augmented.Stages[0].Goals[0].GoalType);
+        Assert.Equal(MissionGoalType.Landing, augmented.Stages[0].Goals[1].GoalType);
+        Assert.Equal(MissionGoalType.ParkingOrbit, augmented.Stages[0].Goals[2].GoalType);
+    }
+
     private sealed class FakeGameContext
     {
         public double UniversalTimeSeconds { get; set; }
@@ -363,6 +469,30 @@ public sealed class ReflectionAdapterTests
         public void EngageAscentAutopilot()
         {
             AscentAutopilotEnabled = true;
+        }
+    }
+
+    private sealed class FixedGravityAssistScout : IGravityAssistScout
+    {
+        public IReadOnlyList<GravityAssistOption> FindCandidates(
+            MissionGoal fromGoal,
+            MissionGoal toGoal,
+            double universalTimeSeconds)
+        {
+            _ = fromGoal;
+            _ = toGoal;
+            return new[]
+            {
+                new GravityAssistOption
+                {
+                    AssistBodyName = "Eve",
+                    EncounterWindowStartUtSeconds = universalTimeSeconds + 10000,
+                    EncounterWindowEndUtSeconds = universalTimeSeconds + 16000,
+                    EstimatedDeltaVSavingsMetersPerSecond = 420,
+                    EstimatedFlightTimeChangeSeconds = -3 * 24 * 60 * 60,
+                    Notes = "Coarse pre-screened assist candidate",
+                },
+            };
         }
     }
 }
