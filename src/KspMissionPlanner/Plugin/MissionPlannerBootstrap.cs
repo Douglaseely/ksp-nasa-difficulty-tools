@@ -1,4 +1,5 @@
 using KspIntegration.Mission;
+using KspMissionPlanner.Integrations;
 using KspMissionPlanner.Planning;
 
 namespace KspMissionPlanner.Plugin;
@@ -9,17 +10,20 @@ public sealed class MissionPlannerBootstrap
     private readonly IWaypointCatalog? _waypointCatalog;
     private readonly IMissionProgramStore _missionStore;
     private readonly IGravityAssistScout _gravityAssistScout;
+    private readonly IMissionMathService _missionMath;
 
     public MissionPlannerBootstrap(
         IKspGameContext gameContext,
         IWaypointCatalog? waypointCatalog = null,
         IMissionProgramStore? missionStore = null,
-        IGravityAssistScout? gravityAssistScout = null)
+        IGravityAssistScout? gravityAssistScout = null,
+        IMissionMathService? missionMath = null)
     {
         _gameContext = gameContext;
         _waypointCatalog = waypointCatalog;
         _missionStore = missionStore ?? new InMemoryMissionProgramStore();
         _gravityAssistScout = gravityAssistScout ?? new NoOpGravityAssistScout();
+        _missionMath = missionMath ?? new WorksheetMissionMathService();
     }
 
     public MissionPlan BuildReversePlan(MissionObjective objective)
@@ -37,25 +41,34 @@ public sealed class MissionPlannerBootstrap
 
         // This is the integration seam where KSP state is read and your math modules are called.
         var universalTimeSeconds = _gameContext.UniversalTimeSeconds;
+        var gameState = _gameContext.CaptureGameState();
+        var planningContext = new MissionPlanningContext
+        {
+            CurrentSaveName = _gameContext.CurrentSaveName,
+            UniversalTimeSeconds = universalTimeSeconds,
+            GameState = gameState,
+        };
 
         ValidateWaypointTargets(missionProgram);
 
         var allGoals = FlattenGoals(missionProgram.Stages);
         var transitionAssessments = new System.Collections.Generic.List<MissionTransitionAssessment>();
         var legs = new System.Collections.Generic.List<MissionLeg>();
+        var maneuvers = new System.Collections.Generic.List<PlannedManeuver>();
 
         for (var index = 0; index < allGoals.Count - 1; index++)
         {
             var fromGoal = allGoals[index];
             var toGoal = allGoals[index + 1];
+            var directTransfer = _missionMath.EstimateTransfer(fromGoal, toGoal, planningContext);
             var gravityAssistCandidates = _gravityAssistScout.FindCandidates(fromGoal, toGoal, universalTimeSeconds);
 
             transitionAssessments.Add(new MissionTransitionAssessment
             {
                 FromGoalId = fromGoal.GoalId,
                 ToGoalId = toGoal.GoalId,
-                DirectTransferDeltaVMetersPerSecond = 0.0,
-                DirectTransferFlightTimeSeconds = 0.0,
+                DirectTransferDeltaVMetersPerSecond = directTransfer.DeltaVMetersPerSecond,
+                DirectTransferFlightTimeSeconds = directTransfer.FlightTimeSeconds,
                 GravityAssistCandidates = gravityAssistCandidates,
             });
 
@@ -67,10 +80,15 @@ public sealed class MissionPlannerBootstrap
                 ToGoalId = toGoal.GoalId,
                 DepartureSurfaceTarget = fromGoal.SurfaceTarget,
                 ArrivalSurfaceTarget = toGoal.SurfaceTarget,
-                EstimatedDeltaVMetersPerSecond = 0.0,
-                EstimatedCoastTimeSeconds = 0.0,
+                EstimatedDeltaVMetersPerSecond = directTransfer.DeltaVMetersPerSecond,
+                EstimatedCoastTimeSeconds = directTransfer.FlightTimeSeconds,
                 GravityAssistCandidates = gravityAssistCandidates,
             });
+
+            foreach (var maneuver in directTransfer.Maneuvers)
+            {
+                maneuvers.Add(maneuver);
+            }
         }
 
         var terminalGoal = allGoals.Count > 0 ? allGoals[allGoals.Count - 1] : null;
@@ -90,6 +108,7 @@ public sealed class MissionPlannerBootstrap
             Stages = missionProgram.Stages,
             TransitionAssessments = transitionAssessments,
             Legs = legs,
+            Maneuvers = maneuvers,
         };
     }
 
@@ -107,6 +126,11 @@ public sealed class MissionPlannerBootstrap
     public bool DeleteMissionProgram(string missionId)
     {
         return _missionStore.Delete(missionId);
+    }
+
+    public bool TryGetMissionProgram(string missionId, out MissionProgram missionProgram)
+    {
+        return _missionStore.TryGetById(missionId, out missionProgram!);
     }
 
     public MissionProgram EnsureParkingOrbitGoals(
@@ -167,7 +191,6 @@ public sealed class MissionPlannerBootstrap
             MissionGoalType.Landing => MissionObjectiveType.Landing,
             MissionGoalType.SurfaceWaypoint => MissionObjectiveType.SurfaceWaypoint,
             MissionGoalType.SurfaceHop => MissionObjectiveType.SurfaceHop,
-            MissionGoalType.ParkingOrbit => MissionObjectiveType.Orbit,
             _ => MissionObjectiveType.Orbit,
         };
     }

@@ -1,4 +1,5 @@
 using KspIntegration.Flight;
+using KspAscentOptimizer.Integrations;
 using KspAscentOptimizer.Optimization;
 
 namespace KspAscentOptimizer.Plugin;
@@ -8,28 +9,45 @@ public sealed class AscentOptimizerBootstrap
     private readonly IMechJebAdapter _mechJeb;
     private readonly IRealFuelsAdapter _realFuels;
     private readonly IFarAdapter _far;
+    private readonly IAscentGuidanceMathService _guidanceMath;
 
-    public AscentOptimizerBootstrap(IMechJebAdapter mechJeb, IRealFuelsAdapter realFuels, IFarAdapter far)
+    public AscentOptimizerBootstrap(
+        IMechJebAdapter mechJeb,
+        IRealFuelsAdapter realFuels,
+        IFarAdapter far,
+        IAscentGuidanceMathService? guidanceMath = null)
     {
         _mechJeb = mechJeb;
         _realFuels = realFuels;
         _far = far;
+        _guidanceMath = guidanceMath ?? new WorksheetAscentGuidanceMathService();
     }
 
-    public void ConfigureAndEngage(VehicleProfile vehicle, GuidanceRequest? guidanceRequest = null)
+    public GuidancePolicy PreviewGuidance(VehicleProfile vehicle, GuidanceRequest? guidanceRequest = null)
     {
-        _ = vehicle;
-        _ = _realFuels.GetCurrentStageMinimumThrottle01();
-        _ = _far.EstimateDragLossesMetersPerSecond();
-
-        if (guidanceRequest?.Mode == GuidanceMode.SurfaceHop)
+        var context = new AscentOptimizationContext
         {
-            _ = _mechJeb.SupportsSurfaceHopGuidance();
+            RuntimeStages = _realFuels.CaptureStages(),
+            CurrentStageMinimumThrottle01 = _realFuels.GetCurrentStageMinimumThrottle01(),
+            Aerodynamics = _far.CaptureAerodynamics(),
+            SupportsSurfaceHopGuidance = guidanceRequest?.Mode == GuidanceMode.SurfaceHop && _mechJeb.SupportsSurfaceHopGuidance(),
+        };
+
+        return _guidanceMath.BuildGuidancePolicy(vehicle, guidanceRequest, context);
+    }
+
+    public GuidancePolicy ConfigureAndEngage(VehicleProfile vehicle, GuidanceRequest? guidanceRequest = null)
+    {
+        var policy = PreviewGuidance(vehicle, guidanceRequest);
+
+        _mechJeb.SetAscentMaxAcceleration(policy.RecommendedMaxAccelerationMetersPerSecondSquared);
+        _mechJeb.SetAscentLimitQ(policy.RecommendedMaxDynamicPressurePa);
+
+        if (policy.ShouldEngageAutopilot)
+        {
+            _mechJeb.EngageAscentAutopilot();
         }
 
-        // Placeholder policy until your math optimizer is implemented.
-        _mechJeb.SetAscentMaxAcceleration(30.0);
-        _mechJeb.SetAscentLimitQ(25000.0);
-        _mechJeb.EngageAscentAutopilot();
+        return policy;
     }
 }

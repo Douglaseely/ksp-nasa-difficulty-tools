@@ -38,6 +38,20 @@ The architecture is designed so you write the math yourself:
 2. `dotnet restore`
 3. `dotnet build`
 
+On this machine, `dotnet build` now also deploys the `net481` runtime mod output into your local KSP install via KSPBuildTools.
+Override the deploy path with `KSPBT_GameRoot=/path/to/KSP dotnet build` if needed.
+
+## Release packaging
+
+- Build distributable KSP zip files for both mods:
+	- `bash scripts/package-release.sh 0.1.0`
+- Artifacts are written to:
+	- `artifacts/release/<version>/`
+- Packaging now copies each project's generated `GameData/<ModName>/` folder, so the zip matches the real KSP runtime target rather than the old `netstandard` output.
+
+See `docs/RELEASE_AND_CKAN.md` for full release and CKAN preparation steps.
+See `docs/WORKSHEET_INTEGRATION_MAP.md` for the new controller/bootstrap flow and where worksheet math plugs into it.
+
 ## Test lanes
 
 - `dotnet test tests/KspIntegrationTests/KspIntegrationTests.csproj`
@@ -53,6 +67,12 @@ The architecture is designed so you write the math yourself:
 ## UI planning
 
 - See `docs/KSP_UI_USAGE_AND_IMPLEMENTATION.md` for in-game workflow, tab layout, lifecycle hooks, and implementation milestones.
+
+## CKAN preparation
+
+- CKAN metadata templates are staged in `ckan/`.
+- Fill placeholder values after you publish a GitHub release with mod zip assets.
+- Submit completed `.ckan` metadata to CKAN-meta.
 
 ## Next implementation steps
 
@@ -80,6 +100,7 @@ This section captures the key context behind the repository so contributors can 
 - TestFlight:
 	- Adds reliability and failure risk that depends on engine usage and flight environment.
 	- Better planning for ignition timing and ascent conditions is required.
+	- Adds burn time limits to engines so they can't fire forever, potentially limiting the potential of a stage outside of its fuel.
 - FAR (Ferram Aerospace Research):
 	- Replaces stock aerodynamics with more realistic aero behavior.
 	- Drag and ascent shaping become major optimization factors.

@@ -1,15 +1,62 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <AssemblyName>KspAscentOptimizer</AssemblyName>
+    <RootNamespace>KspAscentOptimizer</RootNamespace>
+    <TargetFrameworks>netstandard2.0;net481</TargetFrameworks>
+    <Version>$(RepositoryVersion)</Version>
+    <FileVersion>$(Version)</FileVersion>
+    <Description>KSP ascent and surface-hop guidance policy tooling.</Description>
+    <Product>KspAscentOptimizer</Product>
+    <KSPBT_ModRoot>$(MSBuildProjectDirectory)/GameData/$(AssemblyName)</KSPBT_ModRoot>
+    <KSPBT_ModPluginFolder>Plugins</KSPBT_ModPluginFolder>
+    <DebugType>portable</DebugType>
+    <DefineConstants Condition="'$(TargetFramework)' == 'net481'">$(DefineConstants);KSP_RUNTIME</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(KSPBT_ModVersion)' != '' ">
+    <Version>$(KSPBT_ModVersion)</Version>
+    <FileVersion>$(Version)</FileVersion>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\KspIntegration\KspIntegration.csproj" />
     <ProjectReference Include="..\KspMathCore\KspMathCore.csproj" />
   </ItemGroup>
 
+  <ItemGroup Condition="'$(TargetFramework)' == 'net481'">
+    <PackageReference Include="KSPBuildTools" Version="1.1.1" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net481" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net481'">
+    <KSPVersionFile Include=".">
+      <Destination>$(KSPBT_ModRoot)/$(AssemblyName).version</Destination>
+      <URL>https://github.com/YOUR_GITHUB_ORG/YOUR_REPO/releases/latest/download/$(AssemblyName).version</URL>
+      <Download>https://github.com/YOUR_GITHUB_ORG/YOUR_REPO/releases/latest</Download>
+      <KSP_Version>1.12.5</KSP_Version>
+      <KSP_Version_Min>1.12.0</KSP_Version_Min>
+      <KSP_Version_Max>1.12.99</KSP_Version_Max>
+    </KSPVersionFile>
+  </ItemGroup>
+
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <Target Name="DeployGameDataToKsp" AfterTargets="KSPBT_CopyDLLsToPluginFolder" Condition=" '$(TargetFramework)' == 'net481' and '$(KSPBT_GameRoot)' != '' ">
+    <PropertyGroup>
+      <_KspModDeployDir>$(KSPBT_GameRoot)/GameData/$(AssemblyName)</_KspModDeployDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_ModDeployFiles Include="$(KSPBT_ModRoot)/**/*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_ModDeployFiles)" DestinationFolder="$(_KspModDeployDir)/%(RecursiveDir)" SkipUnchangedFiles="true" />
+    <Message Text="Deployed GameData to $(_KspModDeployDir)" Importance="high" />
+  </Target>
 
 </Project>

@@ -11,7 +11,8 @@ public static class HohmannTransferWorksheet
             throw new ArgumentOutOfRangeException("mu/radius", "mu and radius must be positive.");
         }
 
-        throw new NotImplementedException("Learning task: implement v = sqrt(mu / r).");
+        return Math.Sqrt(mu / radius);
+
     }
 
     public static double ComputeTransferSemiMajorAxis(double r1, double r2)

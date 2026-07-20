@@ -1,0 +1,30 @@
+{
+  "spec_version": "v1.36",
+  "identifier": "KspAscentOptimizer",
+  "$kref": "#/ckan/github/YOUR_GITHUB_ORG/YOUR_REPO",
+  "$vref": "#/ckan/ksp-avc",
+  "name": "KSP Ascent Optimizer",
+  "abstract": "Stage-aware ascent and surface-hop guidance policy scaffolding with MechJeb, FAR, and RealFuels adapter seams.",
+  "author": ["Douglas Seely"],
+  "version": "{{ version }}",
+  "ksp_version_min": "1.12.0",
+  "ksp_version_max": "1.12.99",
+  "license": "restricted",
+  "download": "{{ github_release_zip_url_for_ascent_optimizer }}",
+  "install": [
+    {
+      "find": "GameData/KspAscentOptimizer",
+      "install_to": "GameData"
+    }
+  ],
+  "resources": {
+    "homepage": "https://github.com/YOUR_GITHUB_ORG/YOUR_REPO",
+    "repository": "https://github.com/YOUR_GITHUB_ORG/YOUR_REPO",
+    "bugtracker": "https://github.com/YOUR_GITHUB_ORG/YOUR_REPO/issues"
+  },
+  "depends": [
+    {
+      "name": "ModuleManager"
+    }
+  ]
+}

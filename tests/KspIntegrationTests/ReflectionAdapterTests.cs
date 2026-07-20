@@ -1,10 +1,12 @@
 using System.Collections.Generic;
 using System.IO;
+using KspAscentOptimizer.Integrations;
 using KspAscentOptimizer.Optimization;
 using KspAscentOptimizer.Plugin;
 using KspIntegration.Flight;
 using KspIntegration.Mission;
 using KspIntegration.Models;
+using KspMissionPlanner.Integrations;
 using KspMissionPlanner.Planning;
 using KspMissionPlanner.Plugin;
 using Xunit;
@@ -199,7 +201,7 @@ public sealed class ReflectionAdapterTests
         {
             new FakeWaypoint { BodyName = "Mun", Name = "Biome Hop 1", BiomeName = "Midlands", Latitude = 12.0, Longitude = 30.0, Altitude = 500.0 },
         });
-        var bootstrap = new MissionPlannerBootstrap(context, waypoints);
+        var bootstrap = new MissionPlannerBootstrap(context, waypoints, missionMath: new FixedMissionMathService());
 
         var plan = bootstrap.BuildReversePlan(new MissionObjective
         {
@@ -223,9 +225,9 @@ public sealed class ReflectionAdapterTests
         var mechJeb = new ReflectionMechJebAdapter(new FakeMechJebController());
         var realFuels = new ReflectionRealFuelsAdapter(new FakeRealFuelsProvider { CurrentStageMinimumThrottle01 = 0.35 });
         var far = new ReflectionFarAdapter(new FakeFarFlightData { DragLossEstimate = 140 });
-        var bootstrap = new AscentOptimizerBootstrap(mechJeb, realFuels, far);
+        var bootstrap = new AscentOptimizerBootstrap(mechJeb, realFuels, far, new FixedAscentGuidanceMathService());
 
-        bootstrap.ConfigureAndEngage(
+        var policy = bootstrap.ConfigureAndEngage(
             new VehicleProfile { CraftName = "Surveyor" },
             new GuidanceRequest
             {
@@ -239,9 +241,48 @@ public sealed class ReflectionAdapterTests
             });
 
         var snapshot = mechJeb.CaptureAscentSettings();
-        Assert.Equal(30.0, snapshot.MaxAccelerationMetersPerSecondSquared);
-        Assert.Equal(25000.0, snapshot.LimitQPa);
+        Assert.Equal(31.5, snapshot.MaxAccelerationMetersPerSecondSquared);
+        Assert.Equal(18000.0, snapshot.LimitQPa);
         Assert.True(snapshot.AscentAutopilotEnabled);
+        Assert.Equal(31.5, policy.RecommendedMaxAccelerationMetersPerSecondSquared);
+    }
+
+    [Fact]
+    public void AscentOptimizerController_ProvidesVehiclePreviewAndEngageFlows()
+    {
+        var mechJeb = new ReflectionMechJebAdapter(new FakeMechJebController());
+        var realFuels = new ReflectionRealFuelsAdapter(new FakeRealFuelsProvider
+        {
+            CurrentStageMinimumThrottle01 = 0.35,
+            Stages = new List<FakeStage>
+            {
+                new FakeStage
+                {
+                    StageIndex = 1,
+                    StageName = "Booster",
+                    MaxThrustNewton = 220000,
+                    MinThrottle01 = 0.35,
+                    IspVacSeconds = 320,
+                    IspAtmSeconds = 285,
+                },
+            },
+        });
+        var far = new ReflectionFarAdapter(new FakeFarFlightData { DragLossEstimate = 140, DynamicPressure = 24000, Density = 0.5, Mach = 1.6 });
+        var bootstrap = new AscentOptimizerBootstrap(mechJeb, realFuels, far, new FixedAscentGuidanceMathService());
+        var controller = new AscentOptimizerController(bootstrap, realFuels, far, mechJeb);
+
+        var vehicle = controller.BuildVehicleProfile("Surveyor");
+        var preview = controller.PreviewGuidance(vehicle, new GuidanceRequest { Mode = GuidanceMode.AscentToOrbit, TargetOrbitAltitudeMeters = 100000 });
+        var engaged = controller.EngageGuidance(vehicle, new GuidanceRequest { Mode = GuidanceMode.AscentToOrbit, TargetOrbitAltitudeMeters = 100000 });
+        var diagnostics = controller.CaptureDiagnostics();
+
+        Assert.Single(vehicle.Stages);
+        Assert.Equal(18000.0, preview.RecommendedMaxDynamicPressurePa);
+        Assert.Equal(31.5, engaged.RecommendedMaxAccelerationMetersPerSecondSquared);
+        Assert.Equal(1, diagnostics.StageCount);
+        Assert.Equal(0.35, diagnostics.CurrentStageMinimumThrottle01);
+        Assert.Equal(140, diagnostics.EstimatedDragLossesMetersPerSecond);
+        Assert.True(diagnostics.SupportsSurfaceHopGuidance);
     }
 
     [Fact]
@@ -272,7 +313,7 @@ public sealed class ReflectionAdapterTests
     {
         var context = new ReflectionKspGameContext(new FakeGameContext { UniversalTimeSeconds = 43210, CurrentSaveName = "Career" });
         var gravityScout = new FixedGravityAssistScout();
-        var bootstrap = new MissionPlannerBootstrap(context, gravityAssistScout: gravityScout);
+        var bootstrap = new MissionPlannerBootstrap(context, gravityAssistScout: gravityScout, missionMath: new FixedMissionMathService());
 
         var missionProgram = new MissionProgram
         {
@@ -298,8 +339,68 @@ public sealed class ReflectionAdapterTests
         Assert.Single(plan.TransitionAssessments);
         Assert.Single(plan.TransitionAssessments[0].GravityAssistCandidates);
         Assert.Equal("Eve", plan.TransitionAssessments[0].GravityAssistCandidates[0].AssistBodyName);
+        Assert.Equal(915.0, plan.TransitionAssessments[0].DirectTransferDeltaVMetersPerSecond);
         Assert.Single(plan.Legs);
         Assert.Single(plan.Legs[0].GravityAssistCandidates);
+        Assert.Single(plan.Maneuvers);
+    }
+
+    [Fact]
+    public void MissionPlannerController_HandlesCreateValidatePlanAndExportFlows()
+    {
+        var context = new ReflectionKspGameContext(new FakeGameContext
+        {
+            UniversalTimeSeconds = 55,
+            CurrentSaveName = "Career",
+            ActiveVessel = new FakeVessel { MainBodyName = "Kerbin" },
+        });
+        var nodeWriter = new FakeNodeWriter();
+        var bootstrap = new MissionPlannerBootstrap(context, missionMath: new FixedMissionMathService());
+        var controller = new MissionPlannerController(bootstrap, context, waypointCatalogAvailable: true, maneuverNodeWriter: nodeWriter);
+
+        var mission = controller.CreateMissionProgram("Mun Orbiter");
+        mission.Stages = new[]
+        {
+            new MissionStage
+            {
+                StageNumber = 1,
+                Name = "Transfer",
+                Goals = new[]
+                {
+                    new MissionGoal
+                    {
+                        GoalId = "g1",
+                        Name = "Kerbin Parking Orbit",
+                        GoalType = MissionGoalType.Orbit,
+                        TargetBody = "Kerbin",
+                        OrbitTarget = new OrbitTarget { BodyName = "Kerbin", PeriapsisAltitudeMeters = 120000, ApoapsisAltitudeMeters = 120000 },
+                    },
+                    new MissionGoal
+                    {
+                        GoalId = "g2",
+                        Name = "Mun Parking Orbit",
+                        GoalType = MissionGoalType.Orbit,
+                        TargetBody = "Mun",
+                        OrbitTarget = new OrbitTarget { BodyName = "Mun", PeriapsisAltitudeMeters = 15000, ApoapsisAltitudeMeters = 15000 },
+                    },
+                },
+            },
+        };
+
+        var validationMessages = controller.ValidateMissionProgram(mission);
+        var plan = controller.GeneratePlan(mission);
+        var exportedNodeCount = controller.ExportPlannedManeuvers(plan);
+        var diagnostics = controller.CaptureDiagnostics();
+
+        Assert.Empty(validationMessages);
+        Assert.Single(plan.Maneuvers);
+        Assert.Equal(1, exportedNodeCount);
+        Assert.Equal(915.0, plan.Legs[0].EstimatedDeltaVMetersPerSecond);
+        Assert.Equal("Career", diagnostics.CurrentSaveName);
+        Assert.Equal("Kerbin", diagnostics.ActiveBodyName);
+        Assert.True(diagnostics.WaypointCatalogAvailable);
+        Assert.True(diagnostics.ManeuverNodeExportAvailable);
+        Assert.Equal(915.0, nodeWriter.ProgradeMetersPerSecond);
     }
 
     [Fact]
@@ -507,12 +608,20 @@ public sealed class ReflectionAdapterTests
         public double Altitude { get; set; }
     }
 
-    private sealed class FakeNodeWriter
+    private sealed class FakeNodeWriter : IManeuverNodeWriter
     {
         public double UniversalTimeSeconds { get; private set; }
         public double ProgradeMetersPerSecond { get; private set; }
         public double NormalMetersPerSecond { get; private set; }
         public double RadialMetersPerSecond { get; private set; }
+
+        public void AddNode(ManeuverNodeRequest nodeRequest)
+        {
+            UniversalTimeSeconds = nodeRequest.UniversalTimeSeconds;
+            ProgradeMetersPerSecond = nodeRequest.ProgradeMetersPerSecond;
+            NormalMetersPerSecond = nodeRequest.NormalMetersPerSecond;
+            RadialMetersPerSecond = nodeRequest.RadialMetersPerSecond;
+        }
 
         public void AddNode(double universalTimeSeconds, double prograde, double normal, double radial)
         {
@@ -569,6 +678,51 @@ public sealed class ReflectionAdapterTests
                     EstimatedDeltaVSavingsMetersPerSecond = 420,
                     EstimatedFlightTimeChangeSeconds = -3 * 24 * 60 * 60,
                     Notes = "Coarse pre-screened assist candidate",
+                },
+            };
+        }
+    }
+
+    private sealed class FixedMissionMathService : IMissionMathService
+    {
+        public DirectTransferEstimate EstimateTransfer(MissionGoal fromGoal, MissionGoal toGoal, MissionPlanningContext context)
+        {
+            _ = fromGoal;
+            _ = toGoal;
+            return new DirectTransferEstimate
+            {
+                DeltaVMetersPerSecond = 915.0,
+                FlightTimeSeconds = 7200.0 + context.UniversalTimeSeconds,
+                Maneuvers = new[]
+                {
+                    new PlannedManeuver
+                    {
+                        Description = "Injected transfer burn",
+                        DeltaVMetersPerSecond = 915.0,
+                        BurnDurationSeconds = 120.0,
+                        PlannedTimeUtc = DateTimeOffset.UnixEpoch.AddSeconds(context.UniversalTimeSeconds + 600.0),
+                    },
+                },
+                Summary = "Fixed estimate for seam tests",
+            };
+        }
+    }
+
+    private sealed class FixedAscentGuidanceMathService : IAscentGuidanceMathService
+    {
+        public GuidancePolicy BuildGuidancePolicy(VehicleProfile vehicle, GuidanceRequest? guidanceRequest, AscentOptimizationContext context)
+        {
+            _ = vehicle;
+            _ = guidanceRequest;
+            return new GuidancePolicy
+            {
+                RecommendedMaxDynamicPressurePa = 18000.0,
+                RecommendedMaxAccelerationMetersPerSecondSquared = 31.5,
+                ShouldEngageAutopilot = true,
+                Notes = new[]
+                {
+                    "Fixed guidance for seam tests.",
+                    $"Min throttle {context.CurrentStageMinimumThrottle01:0.00}",
                 },
             };
         }

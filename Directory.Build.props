@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <RepositoryVersion Condition="'$(RepositoryVersion)' == ''">0.1.0</RepositoryVersion>
+    <KspDefaultGameRoot Condition="'$(KspDefaultGameRoot)' == ''">/Users/douglas.seely/Library/Application Support/Steam/steamapps/common/Kerbal Space Program</KspDefaultGameRoot>
+    <KSPBT_GameRoot Condition="'$(KSPBT_GameRoot)' == ''">$(KspDefaultGameRoot)</KSPBT_GameRoot>
+  </PropertyGroup>
+</Project>

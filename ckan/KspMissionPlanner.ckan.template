@@ -1,0 +1,30 @@
+{
+  "spec_version": "v1.36",
+  "identifier": "KspMissionPlanner",
+  "$kref": "#/ckan/github/YOUR_GITHUB_ORG/YOUR_REPO",
+  "$vref": "#/ckan/ksp-avc",
+  "name": "KSP Mission Planner",
+  "abstract": "Mission-program planning for reverse mission design, transfer analysis, parking-orbit insertion, and waypoint-aware mission structure.",
+  "author": ["Douglas Seely"],
+  "version": "{{ version }}",
+  "ksp_version_min": "1.12.0",
+  "ksp_version_max": "1.12.99",
+  "license": "restricted",
+  "download": "{{ github_release_zip_url_for_mission_planner }}",
+  "install": [
+    {
+      "find": "GameData/KspMissionPlanner",
+      "install_to": "GameData"
+    }
+  ],
+  "resources": {
+    "homepage": "https://github.com/YOUR_GITHUB_ORG/YOUR_REPO",
+    "repository": "https://github.com/YOUR_GITHUB_ORG/YOUR_REPO",
+    "bugtracker": "https://github.com/YOUR_GITHUB_ORG/YOUR_REPO/issues"
+  },
+  "depends": [
+    {
+      "name": "ModuleManager"
+    }
+  ]
+}
